@@ -3,6 +3,7 @@ package game
 import (
 	"fmt"
 	mathrand "math/rand"
+	"strings"
 	"time"
 )
 
@@ -11,11 +12,18 @@ var rand = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
 type CardSuit string
 
 const (
-	CardSuitHearts   CardSuit = "♥️"
-	CardSuitDiamonds CardSuit = "♦️"
-	CardSuitClubs    CardSuit = "♣️"
-	CardSuitSpades   CardSuit = "♠️"
+	CardSuitHearts   CardSuit = "H"
+	CardSuitDiamonds CardSuit = "D"
+	CardSuitClubs    CardSuit = "C"
+	CardSuitSpades   CardSuit = "S"
 )
+
+var CardSuitLabels = map[CardSuit]string{
+	CardSuitHearts:   "♥️",
+	CardSuitDiamonds: "♦️",
+	CardSuitClubs:    "♣️",
+	CardSuitSpades:   "♠️",
+}
 
 type CardValue int
 
@@ -50,34 +58,35 @@ var cardValueLabels = map[CardValue]string{
 }
 
 type Card struct {
+	Id    string
 	Suit  CardSuit
 	Value CardValue
 	label string
 }
 
 func (c Card) String() string {
-	return string(c.label) + string(c.Suit)
+	return string(c.label) + CardSuitLabels[c.Suit]
 }
 
 type Deck struct {
-	cards []Card
+	cards []*Card
 }
 
 func NewDeck() *Deck {
-	cards := make([]Card, 0, 52)
+	cards := []*Card{}
 	for _, suit := range []CardSuit{CardSuitHearts, CardSuitDiamonds, CardSuitClubs, CardSuitSpades} {
 		for value := CardValueThree; value <= CardValueAce; value++ {
-			cards = append(cards, Card{Suit: suit, Value: value, label: cardValueLabels[value]})
+			cards = append(cards, &Card{
+				Id:   strings.ToLower(fmt.Sprintf("%d%s", value, suit)),
+				Suit: suit, Value: value, label: cardValueLabels[value]},
+			)
 		}
 	}
 	return &Deck{cards: cards}
 }
 
-func (d *Deck) Put(card *Card) {
-	if card == nil {
-		return
-	}
-	d.cards = append(d.cards, *card)
+func (d *Deck) Put(cards ...*Card) {
+	d.cards = append(d.cards, cards...)
 }
 
 func (d *Deck) Shuffle() {
@@ -105,7 +114,7 @@ func (d *Deck) DrawOne() *Card {
 	}
 	card := d.cards[len(d.cards)-1]
 	d.cards = d.cards[:len(d.cards)-1]
-	return &card
+	return card
 }
 
 func (d *Deck) DrawN(count int) []*Card {
@@ -121,7 +130,7 @@ func (d *Deck) DrawN(count int) []*Card {
 	for i := 0; i < count; i++ {
 		card := d.cards[len(d.cards)-1]
 		d.cards = d.cards[:len(d.cards)-1]
-		drawnCards[i] = &card
+		drawnCards[i] = card
 	}
 
 	return drawnCards
