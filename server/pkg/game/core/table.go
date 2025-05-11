@@ -1,4 +1,4 @@
-package game
+package core
 
 import "fmt"
 
@@ -13,8 +13,8 @@ func (m Move) IsZero() bool {
 
 type Table struct {
 	moves []Move
-	Suit  CardSuit
-	Trump CardSuit
+	Suit  Suit
+	Trump Suit
 }
 
 func (t *Table) Collect() []*Card {
@@ -51,7 +51,7 @@ func (t *Table) Add(move Move) {
 	}
 }
 
-func (t *Table) maxOf(suit CardSuit) Move {
+func (t *Table) maxOf(suit Suit) Move {
 	var max Move
 	for _, move := range t.moves {
 		if move.Card.Suit == suit {

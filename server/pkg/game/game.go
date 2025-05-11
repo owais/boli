@@ -1,31 +1,55 @@
 package game
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+
+	"github.com/owais/boli/server/pkg/comms"
+	"github.com/owais/boli/server/pkg/game/core"
+	"github.com/owais/boli/server/pkg/game/state"
+)
 
 type Game struct {
-	deck    *Deck
-	players Players
-	dealer  *Player
+	mu *sync.Mutex
+
+	// TODO: separate state and game. store all data in state
+	// state   state.State
+	deck    *core.Deck
+	players core.Players
+	dealer  *core.Player
 	score   int
 
-	history []Event
+	// communication channel with the players
+	comms comms.Comms
 }
 
 func New() *Game {
-	team1 := &Team{Name: "Team 1", Allot: scoreAdd}
-	team2 := &Team{Name: "Team 2", Allot: scoreSubtract}
+	team1 := &core.Team{Name: "Team 1", Allot: scoreAdd}
+	team2 := &core.Team{Name: "Team 2", Allot: scoreSubtract}
 
-	return &Game{
-		deck: NewDeck(),
-		players: Players{
-			{ID: "1", Name: "Player 1", Team: team1},
-			{ID: "2", Name: "Player 2", Team: team2},
-			{ID: "3", Name: "Player 3", Team: team1},
-			{ID: "4", Name: "Player 4", Team: team2},
-			{ID: "5", Name: "Player 5", Team: team1},
-			{ID: "6", Name: "Player 6", Team: team2},
+	g := &Game{
+		deck: core.NewDeck(),
+		players: core.Players{
+			core.NewPlayer("1", "Player 1", team1),
+			core.NewPlayer("2", "Player 2", team2),
+			core.NewPlayer("3", "Player 3", team1),
+			core.NewPlayer("4", "Player 4", team2),
+			core.NewPlayer("5", "Player 5", team1),
+			core.NewPlayer("6", "Player 6", team2),
 		},
 	}
+
+	g.comms = comms.NewCli(g.players)
+
+	return g
+}
+
+func scoreAdd(old, score int) int {
+	return old + score
+}
+
+func scoreSubtract(old, score int) int {
+	return old - score
 }
 
 func (g *Game) Start() {
@@ -50,13 +74,11 @@ func (g *Game) Start() {
 		if g.score <= 0 {
 			g.score = 0 - g.score
 			g.dealer = g.players.Next(g.dealer)
-			// g.dealer = g.dealer.Team.oppositePlayer(g.dealer)
-			// g.score = 0
 		}
 	}
 }
 
-func (g *Game) collectToDeck(stack []*Card) {
+func (g *Game) collectToDeck(stack []*core.Card) {
 	for _, card := range stack {
 		g.deck.Put(card)
 	}
@@ -66,9 +88,8 @@ func (g *Game) collectToDeck(stack []*Card) {
 	}
 }
 
-func (g *Game) Win(team *Team, score int) {
+func (g *Game) Win(team *core.Team, score int) {
 	// g.winner = team
-	// g.history = append(g.history, Event{Type: "WinGame", Player: nil, Card: nil})
 	g.score = score
 	fmt.Println("Game Over! Winner: ", team.Name)
 }
@@ -82,7 +103,7 @@ func (g *Game) PlaySet() int {
 		return -1
 	}
 
-	stack := []*Card{}
+	stack := []*core.Card{}
 
 	// play rounds the bid either fails or succeeds (max of 8 rounds)
 	currentPlayer := bid.Player
@@ -93,7 +114,7 @@ func (g *Game) PlaySet() int {
 	score := 0
 	for i := 0; i < 8; i++ {
 
-		table := &Table{}
+		table := &core.Table{}
 
 		g.PlayRound(table, currentPlayer, bid.Player)
 		winner := table.Winner()
@@ -129,7 +150,7 @@ func (g *Game) PlaySet() int {
 }
 
 // PlayRound plays a round of the game and returns the winner
-func (g *Game) PlayRound(table *Table, player *Player, bidder *Player) *Player {
+func (g *Game) PlayRound(table *core.Table, player *core.Player, bidder *core.Player) *core.Player {
 	for i := 0; i < len(g.players); i++ {
 		// If suit has been set, i.e, first card has been played
 		if table.Suit != "" {
@@ -148,18 +169,18 @@ func (g *Game) PlayRound(table *Table, player *Player, bidder *Player) *Player {
 	return table.Winner()
 }
 
-func (g *Game) WaitForTrump(player *Player) CardSuit {
+func (g *Game) WaitForTrump(player *core.Player) core.Suit {
 	answer := getUserTextInput(player, "Select a trump suit", []string{"hearts", "diamonds", "clubs", "spades"})
 
 	switch answer {
 	case "hearts":
-		return CardSuitHearts
+		return core.SuitHearts
 	case "diamonds":
-		return CardSuitDiamonds
+		return core.SuitDiamonds
 	case "clubs":
-		return CardSuitClubs
+		return core.SuitClubs
 	case "spades":
-		return CardSuitSpades
+		return core.SuitSpades
 	default:
 		fmt.Println("Invalid choice, please try again.")
 		return g.WaitForTrump(player)
@@ -170,7 +191,7 @@ func (g *Game) WaitForTrump(player *Player) CardSuit {
 // If the player does not have a card of the same suit, they can play any card
 // If the player has a card of the same suit, they must play it.
 // If the player has a trump card, they can play it only if they don't have a card of the same suit.
-func (g *Game) WaitForMove(player *Player, suit CardSuit) Move {
+func (g *Game) WaitForMove(player *core.Player, suit core.Suit) core.Move {
 	choices := []string{}
 
 	for _, card := range player.Hand.All() {
@@ -187,10 +208,10 @@ func (g *Game) WaitForMove(player *Player, suit CardSuit) Move {
 	choice := getUserTextInput(player, "Play a card", choices)
 
 	// remove the card from player's hand and return it in a Move
-	return Move{Player: player, Card: player.Hand.Remove(choice)}
+	return core.Move{Player: player, Card: player.Hand.Remove(choice)}
 }
 
-func (g *Game) DealAndBid() Bid {
+func (g *Game) DealAndBid() core.Bid {
 
 	// deal five cards to each player and wait for any player to bid at least 6
 	g.Deal(5)
@@ -215,19 +236,27 @@ func (g *Game) DealAndBid() Bid {
 	return bid
 }
 
-func (g *Game) WaitForBid(min int, player *Player) Bid {
+func (g *Game) WaitForBid(min int, player *core.Player) core.Bid {
 	// ask each player to bid
-	bids := []Bid{}
+	bids := []core.Bid{}
 	for _, p := range g.players {
-		num := getUserMinNumberInputOrPass(p, "Enter your bid (0 to pass)", min)
-		if num == 0 {
+		bid := state.CommandPlaceBid{ValidateMin: min}
+
+		err := g.comms.Receive(p, &bid)
+		if err != nil {
+			// pass validation error back to user
+			fmt.Println("Error receiving bid: ", err)
+			continue
+		}
+		// num := getUserMinNumberInputOrPass(&p, "Enter your bid (0 to pass)", min)
+		if bid.Bid == 0 {
 			// player passed
 			continue
 		}
-		bids = append(bids, Bid{Player: p, Rounds: num})
+		bids = append(bids, core.Bid{Player: &p, Rounds: bid.Bid})
 	}
 
-	var maxBid Bid
+	var maxBid core.Bid
 	for _, b := range bids {
 		if b.Rounds > maxBid.Rounds {
 			maxBid = b
@@ -245,7 +274,7 @@ func (g *Game) PrintState() {
 	fmt.Println()
 }
 
-func (g *Game) PrintTable(table *Table, wins, losses int, bid *Bid) {
+func (g *Game) PrintTable(table *core.Table, wins, losses int, bid *core.Bid) {
 	fmt.Println()
 	fmt.Println("===========================")
 	fmt.Printf("Bid: %d by %s (%s)\n", bid.Rounds, bid.Player, bid.Player.Team)
@@ -263,20 +292,19 @@ func (g *Game) PrintHands() {
 }
 
 // Toss deals the cards to each player until someone is dealt a Jack of any suite
-func (g *Game) Toss() *Player {
-	drawn := []*Card{}
-
+func (g *Game) Toss() *core.Player {
+	// TODO: separate this into steps so players get to see the toss in UI
+	drawn := []*core.Card{}
 	for {
 		for _, player := range g.players {
 			card := g.deck.DrawOne()
 			drawn = append(drawn, card)
-			// g.history = append(g.history, Event{Type: "Toss", Player: player, Card: card})
-			if card.Value == CardValueJack {
+			if card.Value == core.CardValueJack {
 				for _, card := range drawn {
 					g.deck.Put(card)
 				}
 				g.deck.Shuffle()
-				return player
+				return &player
 			}
 		}
 	}
@@ -288,10 +316,9 @@ func (g *Game) Deal(eachPlayer int) {
 	for _, player := range g.players {
 		cards := g.deck.DrawN(eachPlayer)
 		player.Hand.Add(cards...)
-		// g.history = append(g.history, Event{Type: "Deal", Player: player, Card: card})
 	}
 }
 
-func (g *Game) oppositeTeam(player *Player) *Team {
+func (g *Game) oppositeTeam(player *core.Player) *core.Team {
 	return g.players.Next(player).Team
 }

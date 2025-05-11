@@ -3,13 +3,15 @@ package game
 import (
 	"fmt"
 	"strings"
+
+	"github.com/owais/boli/server/pkg/game/core"
 )
 
-func prompt(p *Player, msg string) {
+func prompt(p *core.Player, msg string) {
 	fmt.Printf("\n%s\n> %s:", msg, p.Name)
 }
 
-func getUserTextInput(p *Player, msg string, choices []string) string {
+func getUserTextInput(p *core.Player, msg string, choices []string) string {
 	var input string
 	msg = fmt.Sprintf("%s. %s", msg, strings.Join(choices, ", "))
 	for {
@@ -25,7 +27,7 @@ func getUserTextInput(p *Player, msg string, choices []string) string {
 
 }
 
-func getUserMinNumberInputOrPass(p *Player, msg string, min int) int {
+func getUserMinNumberInputOrPass(p *core.Player, msg string, min int) int {
 	var input int
 	for {
 		prompt(p, msg)

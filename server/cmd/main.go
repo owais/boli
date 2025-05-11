@@ -1,10 +1,11 @@
 package main
 
-import (
-	"github.com/owais/boli/server/pkg/game"
-)
+import "github.com/owais/boli/server/pkg/server"
 
 func main() {
-	game := game.New()
-	game.Start()
+	srv := &server.Server{}
+	err := srv.Start()
+	if err != nil {
+		panic(err)
+	}
 }

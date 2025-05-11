@@ -1,4 +1,4 @@
-package game
+package core
 
 import (
 	"fmt"
@@ -9,20 +9,20 @@ import (
 
 var rand = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
 
-type CardSuit string
+type Suit string
 
 const (
-	CardSuitHearts   CardSuit = "H"
-	CardSuitDiamonds CardSuit = "D"
-	CardSuitClubs    CardSuit = "C"
-	CardSuitSpades   CardSuit = "S"
+	SuitHearts   Suit = "H"
+	SuitDiamonds Suit = "D"
+	SuitClubs    Suit = "C"
+	SuitSpades   Suit = "S"
 )
 
-var CardSuitLabels = map[CardSuit]string{
-	CardSuitHearts:   "♥️",
-	CardSuitDiamonds: "♦️",
-	CardSuitClubs:    "♣️",
-	CardSuitSpades:   "♠️",
+var SuitLabels = map[Suit]string{
+	SuitHearts:   "♥️",
+	SuitDiamonds: "♦️",
+	SuitClubs:    "♣️",
+	SuitSpades:   "♠️",
 }
 
 type CardValue int
@@ -59,13 +59,13 @@ var cardValueLabels = map[CardValue]string{
 
 type Card struct {
 	Id    string
-	Suit  CardSuit
+	Suit  Suit
 	Value CardValue
 	label string
 }
 
 func (c Card) String() string {
-	return string(c.label) + CardSuitLabels[c.Suit]
+	return string(c.label) + SuitLabels[c.Suit]
 }
 
 type Deck struct {
@@ -74,7 +74,7 @@ type Deck struct {
 
 func NewDeck() *Deck {
 	cards := []*Card{}
-	for _, suit := range []CardSuit{CardSuitHearts, CardSuitDiamonds, CardSuitClubs, CardSuitSpades} {
+	for _, suit := range []Suit{SuitHearts, SuitDiamonds, SuitClubs, SuitSpades} {
 		for value := CardValueThree; value <= CardValueAce; value++ {
 			cards = append(cards, &Card{
 				Id:   strings.ToLower(fmt.Sprintf("%d%s", value, suit)),
