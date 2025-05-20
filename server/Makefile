@@ -1,7 +1,8 @@
-.PHONY: run
-run:
-	@go run ./cmd/...
+.PHONY: run-server
+run-server:
+	@go run ./cmd/... server
 
-.PHONY: shuffle 
-shuffle:
-	@go run ./cmd/...
+.PHONY: run-cli 
+run-cli:
+	@go run ./cmd/... cli
+

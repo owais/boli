@@ -1,40 +1,90 @@
 package game
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 type Game struct {
-	deck    *Deck
-	players Players
-	dealer  *Player
-	score   int
+	mu       sync.Mutex
+	teamBlue *Team
+	teamRed  *Team
+	pio      PlayerIO
+	deck     *Deck
+	players  Players
+	dealer   *Player
+	score    int
 
-	history []Event
+	events chan Event
 }
 
-func New() *Game {
-	team1 := &Team{Name: "Team 1", Allot: scoreAdd}
-	team2 := &Team{Name: "Team 2", Allot: scoreSubtract}
+func New(pio PlayerIO) *Game {
+	teamRed := &Team{Name: "Team Red", Allot: scoreAdd}
+	teamBlue := &Team{Name: "Team Blue", Allot: scoreSubtract}
 
 	return &Game{
-		deck: NewDeck(),
-		players: Players{
-			{ID: "1", Name: "Player 1", Team: team1},
-			{ID: "2", Name: "Player 2", Team: team2},
-			{ID: "3", Name: "Player 3", Team: team1},
-			{ID: "4", Name: "Player 4", Team: team2},
-			{ID: "5", Name: "Player 5", Team: team1},
-			{ID: "6", Name: "Player 6", Team: team2},
+		pio:      pio,
+		teamBlue: teamBlue,
+		teamRed:  teamRed,
+		events:   make(chan Event),
+		deck:     NewDeck(),
+		players:  Players{
+			/*
+				{ID: "1", Name: "Player 1", Team: team1},
+				{ID: "2", Name: "Player 2", Team: team2},
+				{ID: "3", Name: "Player 3", Team: team1},
+				{ID: "4", Name: "Player 4", Team: team2},
+				{ID: "5", Name: "Player 5", Team: team1},
+				{ID: "6", Name: "Player 6", Team: team2},
+			*/
 		},
 	}
 }
 
+func (g *Game) Join(name string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.players) >= 6 {
+		return fmt.Errorf("game is full")
+	}
+
+	var team *Team
+	{
+		if len(g.players) == 0 {
+			team = g.teamBlue
+		} else {
+			previousTeam := g.players[len(g.players)-1].Team
+			if previousTeam == g.teamBlue {
+				team = g.teamRed
+			} else {
+				team = g.teamBlue
+			}
+		}
+	}
+
+	g.players = append(g.players, &Player{ID: name, Name: name, Team: team})
+	return nil
+}
+
+func (g *Game) handleEvents() {
+	for event := range g.events {
+		fmt.Println("Event: ", event)
+	}
+}
+
 func (g *Game) Start() {
+	go g.handleEvents()
 	g.dealer = g.Toss()
 
 	for {
 		g.PrintState()
-		setScore := g.PlaySet()
-		g.score += setScore
+		result := g.PlaySet()
+		if result.Winner.Name == g.dealer.Team.Name {
+			g.score -= result.Score
+		} else {
+			g.score += result.Score
+		}
+		g.events <- NewSetEndEvent(*result.Winner, result.Score)
 
 		// TODO: implement light suffle and do it here
 
@@ -70,16 +120,17 @@ func (g *Game) Win(team *Team, score int) {
 	// g.winner = team
 	// g.history = append(g.history, Event{Type: "WinGame", Player: nil, Card: nil})
 	g.score = score
-	fmt.Println("Game Over! Winner: ", team.Name)
+	g.events <- NewGameEndEvent(*team, score)
 }
 
-func (g *Game) PlaySet() int {
+func (g *Game) PlaySet() SetResult {
 	// move bid to every round
 	bid := g.DealAndBid()
 	if bid.IsZero() {
-		// reduce the score by 1 and end the round
-		// g.score -= 1
-		return -1
+		return SetResult{
+			Winner: g.dealer.Team,
+			Score:  1,
+		}
 	}
 
 	stack := []*Card{}
@@ -90,13 +141,14 @@ func (g *Game) PlaySet() int {
 	loss := 0
 	lossThreshold := 8 - bid.Rounds + 1
 
+	var setWinner *Team
 	score := 0
+
 	for i := 0; i < 8; i++ {
 
 		table := &Table{}
 
-		g.PlayRound(table, currentPlayer, bid.Player)
-		winner := table.Winner()
+		winner := g.PlayRound(table, currentPlayer, bid.Player)
 		stack = append(stack, table.Collect()...)
 
 		// winner starts the next round
@@ -113,10 +165,12 @@ func (g *Game) PlaySet() int {
 		g.PrintTable(table, won, loss, &bid)
 		if won >= bid.Rounds {
 			score = bid.Rounds
+			setWinner = bid.Player.Team
 			fmt.Println("Bidder won the Set")
 			break
 		} else if loss >= lossThreshold {
 			score = bid.Rounds * 2
+			setWinner = g.oppositeTeam(bid.Player)
 			fmt.Println("Bidder lost the Set")
 			break
 		}
@@ -124,7 +178,11 @@ func (g *Game) PlaySet() int {
 	}
 
 	g.collectToDeck(stack)
-	return score
+
+	return SetResult{
+		Winner: setWinner,
+		Score:  score,
+	}
 
 }
 
@@ -137,6 +195,7 @@ func (g *Game) PlayRound(table *Table, player *Player, bidder *Player) *Player {
 			if table.Trump == "" && !player.HasSuit(table.Suit) {
 				// .. then ask the bidder to select the trump suit
 				table.Trump = g.WaitForTrump(bidder)
+				g.events <- NewTrumpSelectedEvent(*bidder, table.Trump)
 			}
 		}
 
@@ -145,7 +204,9 @@ func (g *Game) PlayRound(table *Table, player *Player, bidder *Player) *Player {
 
 		player = g.players.Next(player)
 	}
-	return table.Winner()
+	winner := table.Winner()
+	g.events <- NewRoundEndEvent(*winner)
+	return winner
 }
 
 func (g *Game) WaitForTrump(player *Player) CardSuit {
@@ -220,11 +281,13 @@ func (g *Game) WaitForBid(min int, player *Player) Bid {
 	bids := []Bid{}
 	for _, p := range g.players {
 		num := getUserMinNumberInputOrPass(p, "Enter your bid (0 to pass)", min)
+		bid := Bid{Player: p, Rounds: num}
+		g.events <- NewBidEvent(bid)
 		if num == 0 {
 			// player passed
 			continue
 		}
-		bids = append(bids, Bid{Player: p, Rounds: num})
+		bids = append(bids, bid)
 	}
 
 	var maxBid Bid
@@ -288,10 +351,15 @@ func (g *Game) Deal(eachPlayer int) {
 	for _, player := range g.players {
 		cards := g.deck.DrawN(eachPlayer)
 		player.Hand.Add(cards...)
-		// g.history = append(g.history, Event{Type: "Deal", Player: player, Card: card})
+		g.events <- NewCardDealtEvent(*player, cards)
 	}
 }
 
 func (g *Game) oppositeTeam(player *Player) *Team {
 	return g.players.Next(player).Team
+}
+
+type SetResult struct {
+	Winner *Team
+	Score  int
 }

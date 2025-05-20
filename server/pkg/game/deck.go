@@ -57,6 +57,16 @@ var cardValueLabels = map[CardValue]string{
 	CardValueAce:   "A",
 }
 
+type Cards []*Card
+
+func (c Cards) Values() []Card {
+	values := make([]Card, len(c))
+	for i, card := range c {
+		values[i] = *card
+	}
+	return values
+}
+
 type Card struct {
 	Id    string
 	Suit  CardSuit
